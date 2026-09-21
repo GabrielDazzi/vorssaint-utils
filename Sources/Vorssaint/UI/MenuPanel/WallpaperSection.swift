@@ -1,0 +1,260 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Vorssaint
+
+import AppKit
+import ImageIO
+import SwiftUI
+
+/// Wallpaper tab in the menu panel.
+struct WallpaperSection: View {
+    @ObservedObject private var l10n = L10n.shared
+    @ObservedObject private var service = WallpaperService.shared
+    @State private var page = 1
+    var collapsible = true
+
+    private var text: WallpaperFeatureStrings {
+        FeatureStrings.wallpaper(l10n.language)
+    }
+
+    private var allItems: [WallpaperSupport.Entry] { service.visibleEntries }
+
+    private var pageCount: Int {
+        WallpaperSupport.pageCount(itemCount: allItems.count)
+    }
+
+    private var currentPage: Int {
+        WallpaperSupport.clampedPage(page, itemCount: allItems.count)
+    }
+
+    private var pageItems: [WallpaperSupport.Entry] {
+        WallpaperSupport.pageSlice(allItems, page: currentPage)
+    }
+
+    var body: some View {
+        PanelSection(.wallpaper,
+                     title: text.pageTitle,
+                     collapsible: collapsible) {
+            VStack(alignment: .leading, spacing: 10) {
+                controls
+                gallery
+                pager
+                if let error = service.lastError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+            .onAppear {
+                // skip rescan if already warm
+                if service.entries.isEmpty {
+                    service.refresh()
+                }
+                PanelInteractionState.shared.viewKeepsPopoverOpen = true
+            }
+            .onDisappear {
+                PanelInteractionState.shared.viewKeepsPopoverOpen = false
+            }
+            .onChange(of: currentPage) { _, newPage in
+                let next = WallpaperSupport.pageSlice(allItems, page: newPage + 1)
+                WallpaperThumbnailCache.prefetch(next.map(\.previewURL))
+            }
+            .onChange(of: service.filter) { _, _ in
+                page = 1
+            }
+            .onChange(of: service.entries.count) { _, _ in
+                page = WallpaperSupport.clampedPage(page, itemCount: allItems.count)
+            }
+        }
+    }
+
+    private var controls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Picker("", selection: Binding(
+                get: { service.filter },
+                set: { newValue in
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        service.setFilter(newValue)
+                    }
+                }
+            )) {
+                Text(text.filterAll).tag(WallpaperSupport.Filter.all)
+                Text(text.filterOwn).tag(WallpaperSupport.Filter.own)
+                Text(text.filterApple).tag(WallpaperSupport.Filter.apple)
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+
+            Toggle(text.applyAllDisplays, isOn: Binding(
+                get: { service.applyAllDisplays },
+                set: { service.applyAllDisplays = $0 }
+            ))
+            .toggleStyle(.switch)
+            .controlSize(.small)
+
+            HStack(spacing: 8) {
+                Button(text.addImage) { service.addImages() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                Button(text.addFolder) { service.addFolder() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                Spacer(minLength: 0)
+                Button(text.openSystemSettings) {
+                    service.openSystemWallpaperSettings()
+                }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // fixed 3x8 so a short page does not collapse the panel
+    private static let thumbHeight: CGFloat = 54
+    private static let gridSpacing: CGFloat = 8
+    private static let columnCount = 3
+    private static var rowCount: Int {
+        (WallpaperSupport.pageSize + columnCount - 1) / columnCount
+    }
+    private static var galleryHeight: CGFloat {
+        CGFloat(rowCount) * thumbHeight + CGFloat(max(0, rowCount - 1)) * gridSpacing
+    }
+
+    @ViewBuilder
+    private var gallery: some View {
+        ZStack(alignment: .topLeading) {
+            if allItems.isEmpty {
+                Group {
+                    if service.isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text(emptyMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            } else {
+                LazyVGrid(columns: [
+                    GridItem(.flexible(), spacing: Self.gridSpacing),
+                    GridItem(.flexible(), spacing: Self.gridSpacing),
+                    GridItem(.flexible(), spacing: Self.gridSpacing),
+                ], spacing: Self.gridSpacing) {
+                    ForEach(pageItems) { entry in
+                        WallpaperThumbButton(entry: entry,
+                                             isApplied: service.appliedPath == entry.imageURL.path,
+                                             height: Self.thumbHeight) {
+                            service.apply(entry)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: Self.galleryHeight, maxHeight: Self.galleryHeight,
+               alignment: .topLeading)
+    }
+
+    private var pager: some View {
+        HStack(spacing: 12) {
+            Button {
+                page = max(1, currentPage - 1)
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 22, height: 22)
+            }
+            .buttonStyle(.borderless)
+            .disabled(currentPage <= 1 || pageCount <= 1)
+            .help(text.previousPage)
+            .accessibilityLabel(text.previousPage)
+
+            Text(pageCount > 1 ? "\(currentPage) / \(pageCount)" : "1 / 1")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .opacity(pageCount > 1 ? 1 : 0.35)
+
+            Button {
+                page = min(pageCount, currentPage + 1)
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 22, height: 22)
+            }
+            .buttonStyle(.borderless)
+            .disabled(currentPage >= pageCount || pageCount <= 1)
+            .help(text.nextPage)
+            .accessibilityLabel(text.nextPage)
+
+            Spacer(minLength: 0)
+        }
+        .frame(height: 22)
+    }
+
+
+    private var emptyMessage: String {
+        switch service.filter {
+        case .all: return text.emptyAll
+        case .own: return text.emptyOwn
+        case .apple: return text.emptyApple
+        }
+    }
+}
+
+private struct WallpaperThumbButton: View {
+    let entry: WallpaperSupport.Entry
+    let isApplied: Bool
+    var height: CGFloat = 54
+    let action: () -> Void
+    @State private var image: NSImage?
+
+    private var previewPath: String { entry.previewURL.path }
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.secondary.opacity(0.15))
+                if let image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Image(systemName: "photo")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: height)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(isApplied ? Color.accentColor : Color.clear, lineWidth: 2)
+            )
+        }
+        .buttonStyle(.plain)
+        .help(entry.title)
+        .accessibilityLabel(entry.title)
+        .onAppear {
+            if image == nil, let cached = WallpaperThumbnailCache.image(for: entry.previewURL) {
+                image = cached
+            }
+        }
+        .task(id: previewPath) {
+            if let cached = WallpaperThumbnailCache.image(for: entry.previewURL) {
+                image = cached
+                return
+            }
+            let url = entry.previewURL
+            let loaded = await Task.detached(priority: .utility) {
+                WallpaperThumbnailCache.loadSync(url: url)
+            }.value
+            image = loaded
+        }
+    }
+}

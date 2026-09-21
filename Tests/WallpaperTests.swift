@@ -1,0 +1,112 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Vorssaint
+
+import Foundation
+
+enum WallpaperContract {
+    static func run(_ suite: TestSuite) {
+        let appleRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("vorssaint-wallpaper-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: appleRoot) }
+
+        try? FileManager.default.createDirectory(at: appleRoot, withIntermediateDirectories: true)
+        let still = appleRoot.appendingPathComponent("Plain Blue.png")
+        let png = Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )!
+        try? png.write(to: still)
+
+        let thumbs = appleRoot.appendingPathComponent(".thumbnails", isDirectory: true)
+        try? FileManager.default.createDirectory(at: thumbs, withIntermediateDirectories: true)
+        let thumb = thumbs.appendingPathComponent("Peak.heic")
+        try? png.write(to: thumb)
+
+        let made = appleRoot.appendingPathComponent("Peak.madesktop")
+        let plist: [String: Any] = ["thumbnailPath": thumb.path]
+        let data = try? PropertyListSerialization.data(fromPropertyList: plist,
+                                                       format: .xml,
+                                                       options: 0)
+        try? data?.write(to: made)
+
+        let apple = WallpaperSupport.enumerateAppleEntries(at: appleRoot)
+        suite.expect(apple.contains { $0.title == "Plain Blue" && $0.source == .apple },
+                     "top-level stills become Apple entries")
+        suite.expect(apple.contains {
+            $0.title == "Peak" && $0.source == .apple && $0.imageURL.path == thumb.path
+        }, "madesktop entries resolve through their thumbnail still")
+
+        let ownFolder = appleRoot.appendingPathComponent("Mine", isDirectory: true)
+        try? FileManager.default.createDirectory(at: ownFolder, withIntermediateDirectories: true)
+        let ownImage = ownFolder.appendingPathComponent("shot.jpg")
+        try? png.write(to: ownImage)
+        let own = WallpaperSupport.ownEntries(from: WallpaperSupport.images(inFolder: ownFolder))
+        suite.expect(own.count == 1 && own[0].source == .own && own[0].title == "shot",
+                     "folder scans produce own entries")
+
+        let merged = WallpaperSupport.merge(apple: apple, own: own)
+        suite.expect(WallpaperSupport.filtered(merged, by: .all).count == merged.count,
+                     "all keeps every entry")
+        suite.expect(WallpaperSupport.filtered(merged, by: .own).allSatisfy { $0.source == .own },
+                     "own filter keeps only own entries")
+        suite.expect(WallpaperSupport.filtered(merged, by: .apple).allSatisfy { $0.source == .apple },
+                     "apple filter keeps only Apple entries")
+
+        suite.expect(WallpaperSupport.targetScreenIDs(allDisplays: true,
+                                                      screenIDs: [1, 2, 3],
+                                                      pointerScreenID: 2) == [1, 2, 3],
+                     "all displays returns every screen id")
+        suite.expect(WallpaperSupport.targetScreenIDs(allDisplays: false,
+                                                      screenIDs: [1, 2, 3],
+                                                      pointerScreenID: 2) == [2],
+                     "single display prefers the pointer screen")
+        suite.expect(WallpaperSupport.targetScreenIDs(allDisplays: false,
+                                                      screenIDs: [1, 2, 3],
+                                                      pointerScreenID: 9) == [1],
+                     "missing pointer screen falls back to the first display")
+        suite.expect(WallpaperSupport.systemWallpaperSettingsURL != nil,
+                     "System Settings wallpaper deep-link is present")
+
+        let numbers = Array(1...50)
+        suite.expect(WallpaperSupport.pageCount(itemCount: 0) == 0,
+                     "an empty gallery has no pages")
+        suite.expect(WallpaperSupport.pageCount(itemCount: 24) == 1
+                        && WallpaperSupport.pageCount(itemCount: 25) == 2
+                        && WallpaperSupport.pageCount(itemCount: 50) == 3,
+                     "pages are 24 items wide")
+        suite.expect(WallpaperSupport.clampedPage(0, itemCount: 50) == 1
+                        && WallpaperSupport.clampedPage(99, itemCount: 50) == 3,
+                     "page index stays inside the valid range")
+        suite.expect(WallpaperSupport.pageSlice(numbers, page: 1) == Array(1...24)
+                        && WallpaperSupport.pageSlice(numbers, page: 2) == Array(25...48)
+                        && WallpaperSupport.pageSlice(numbers, page: 3) == [49, 50],
+                     "page slices cover the list without overlap")
+
+        let imageURL = URL(fileURLWithPath: "/tmp/vorssaint-wallpaper-test.png")
+        suite.expect(WallpaperSupport.imageFileConfigurationData(for: imageURL) != nil
+                        && WallpaperSupport.fillScreenOptionValuesData() != nil,
+                     "store blobs encode for a still image")
+        var root: [String: Any] = [
+            "AllSpacesAndDisplays": ["Type": "idle"] as [String: Any],
+            "Displays": [
+                "DISP-1": ["Type": "individual"] as [String: Any],
+            ],
+            "Spaces": [
+                "SPACE-1": [
+                    "Default": ["Type": "individual"] as [String: Any],
+                    "Displays": [
+                        "DISP-1": ["Type": "individual"] as [String: Any],
+                    ],
+                ] as [String: Any],
+            ],
+            "SystemDefault": ["Type": "individual"] as [String: Any],
+        ]
+        suite.expect(WallpaperSupport.patchStoreRoot(&root, imageURL: imageURL),
+                     "store patch rewrites every Desktop slot")
+        let allDesktop = (root["AllSpacesAndDisplays"] as? [String: Any])?["Desktop"]
+        let displayDesktop = ((root["Displays"] as? [String: Any])?["DISP-1"] as? [String: Any])?["Desktop"]
+        let spaceEntry = (root["Spaces"] as? [String: Any])?["SPACE-1"] as? [String: Any]
+        let spaceDesktop = ((spaceEntry?["Displays"] as? [String: Any])?["DISP-1"] as? [String: Any])?["Desktop"]
+        suite.expect(allDesktop != nil && displayDesktop != nil && spaceDesktop != nil,
+                     "AllSpaces, Displays and Spaces Desktop entries are filled")
+    }
+}
