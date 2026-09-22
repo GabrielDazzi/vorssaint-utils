@@ -2246,9 +2246,12 @@ struct PanelBetaBadge: View {
 
 // MARK: - Overlay scroll container
 
-/// A vertical scroll container that never draws a scroller gutter. Trackpad and
-/// mouse-wheel scrolling still move the document; a visible bar would steal
-/// width from the fixed panel and look like a permanent sidebar.
+/// A vertical scroll container that always uses an overlay scroller, so it never
+/// reserves a legacy gutter on the right (which, when the system is set to always
+/// show scroll bars, would push the fixed-width panel content off-center). The
+/// content is pinned to the full width and reports its natural height back after
+/// every layout pass, so the popover sizes itself to fit and only scrolls once the
+/// content is taller than the screen.
 private struct OverlayScrollView<Content: View>: NSViewRepresentable {
     @Binding var measuredHeight: CGFloat
     let content: Content
@@ -2260,7 +2263,7 @@ private struct OverlayScrollView<Content: View>: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSScrollView()
-        scroll.hasVerticalScroller = false
+        scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = false
         scroll.scrollerStyle = .overlay
         scroll.autohidesScrollers = true
@@ -2283,7 +2286,6 @@ private struct OverlayScrollView<Content: View>: NSViewRepresentable {
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
-        scroll.hasVerticalScroller = false
         scroll.scrollerStyle = .overlay
         guard let host = context.coordinator.host else { return }
         host.rootView = content

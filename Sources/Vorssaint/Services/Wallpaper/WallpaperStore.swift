@@ -40,8 +40,15 @@ enum WallpaperStore {
 
         let backup = index.deletingLastPathComponent()
             .appendingPathComponent("Index.plist.vorssaint-bak", isDirectory: false)
-        try? FileManager.default.removeItem(at: backup)
-        try? FileManager.default.copyItem(at: index, to: backup)
+        do {
+            if FileManager.default.fileExists(atPath: backup.path) {
+                try FileManager.default.removeItem(at: backup)
+            }
+            try FileManager.default.copyItem(at: index, to: backup)
+        } catch {
+            return false
+        }
+        guard FileManager.default.fileExists(atPath: backup.path) else { return false }
 
         guard let written = try? PropertyListSerialization.data(
             fromPropertyList: root, format: .binary, options: 0

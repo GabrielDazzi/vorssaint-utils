@@ -22,6 +22,7 @@ final class WallpaperService: ObservableObject {
     // Apple catalog barely changes; keep after first scan to avoid tab hitch
     private var cachedApple: [WallpaperSupport.Entry]?
     private var refreshToken = UUID()
+    private var applyToken = UUID()
 
     private init() {
         loadBookmarks()
@@ -50,8 +51,10 @@ final class WallpaperService: ObservableObject {
     func syncWithPreferences() {
         if !isAvailable {
             refreshToken = UUID()
+            applyToken = UUID()
             stopAccessing()
             cachedApple = nil
+            WallpaperThumbnailCache.cancelPending()
             WallpaperThumbnailCache.clear()
             entries = []
             lastError = nil
@@ -70,13 +73,10 @@ final class WallpaperService: ObservableObject {
     func setFilter(_ filter: WallpaperSupport.Filter) {
         self.filter = filter
         UserDefaults.standard.set(filter.rawValue, forKey: DefaultsKey.wallpaperFilter)
-        // prefetch page 1 so filter switch does not hitch
-        let firstPage = WallpaperSupport.pageSlice(
-            WallpaperSupport.filtered(entries, by: filter), page: 1)
-        WallpaperThumbnailCache.prefetch(firstPage.map(\.previewURL))
+        prefetchNearbyPages(for: filter, around: 1)
     }
 
-    // scan off-main; publish when ready
+    // scan off-main; publish catalog first, thumbs later
     func refresh(forceAppleRescan: Bool = false) {
         guard isAvailable else {
             entries = []
@@ -88,14 +88,18 @@ final class WallpaperService: ObservableObject {
         let appleCache = forceAppleRescan ? nil : cachedApple
         let token = UUID()
         refreshToken = token
+        WallpaperThumbnailCache.beginGeneration()
         if entries.isEmpty {
             isLoading = true
         }
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let apple = appleCache ?? WallpaperSupport.enumerateAppleEntries()
+            guard self?.refreshToken == token else { return }
+
             var imageURLs: [URL] = []
             for root in roots {
+                guard self?.refreshToken == token else { return }
                 var isDir: ObjCBool = false
                 guard FileManager.default.fileExists(atPath: root.path, isDirectory: &isDir) else {
                     continue
@@ -106,11 +110,10 @@ final class WallpaperService: ObservableObject {
                     imageURLs.append(root)
                 }
             }
+            guard self?.refreshToken == token else { return }
+
             let own = WallpaperSupport.ownEntries(from: imageURLs)
             let merged = WallpaperSupport.merge(apple: apple, own: own)
-            // HEIC decode here, not on first filter flip
-            WallpaperThumbnailCache.prefetchSync(apple.map(\.previewURL))
-            WallpaperThumbnailCache.prefetchSync(own.map(\.previewURL))
             DispatchQueue.main.async {
                 guard let self, self.refreshToken == token else { return }
                 if appleCache == nil {
@@ -118,6 +121,7 @@ final class WallpaperService: ObservableObject {
                 }
                 self.entries = merged
                 self.isLoading = false
+                self.prefetchNearbyPages(for: self.filter, around: 1)
             }
         }
     }
@@ -132,25 +136,33 @@ final class WallpaperService: ObservableObject {
             return
         }
 
-        // AppKit first (feels instant), then store for all Spaces
-        let currentOK = setDesktopImage(url, on: chosen)
-        if applyAllDisplays {
-            let allOK = WallpaperStore.setImageOnAllSpaces(url)
-            if allOK || currentOK {
-                appliedPath = url.path
-                if !allOK {
-                    lastError = FeatureStrings.wallpaper(L10n.shared.language).applyFailed
-                }
-            } else {
-                lastError = FeatureStrings.wallpaper(L10n.shared.language).applyFailed
-            }
-            return
-        }
+        let token = UUID()
+        applyToken = token
+        let applyAll = applyAllDisplays
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let currentOK = await self.setDesktopImage(url, on: chosen, token: token)
+            guard self.isAvailable, self.applyToken == token else { return }
 
-        if currentOK {
-            appliedPath = url.path
-        } else {
-            lastError = FeatureStrings.wallpaper(L10n.shared.language).applyFailed
+            if applyAll {
+                let allOK = WallpaperStore.setImageOnAllSpaces(url)
+                guard self.isAvailable, self.applyToken == token else { return }
+                if allOK || currentOK {
+                    self.appliedPath = url.path
+                    if !allOK {
+                        self.lastError = FeatureStrings.wallpaper(L10n.shared.language).applyFailed
+                    }
+                } else {
+                    self.lastError = FeatureStrings.wallpaper(L10n.shared.language).applyFailed
+                }
+                return
+            }
+
+            if currentOK {
+                self.appliedPath = url.path
+            } else {
+                self.lastError = FeatureStrings.wallpaper(L10n.shared.language).applyFailed
+            }
         }
     }
 
@@ -165,7 +177,7 @@ final class WallpaperService: ObservableObject {
     }
 
     // fill crop; clear same-URL first (macOS skips refresh otherwise)
-    private func setDesktopImage(_ url: URL, on screens: [NSScreen]) -> Bool {
+    private func setDesktopImage(_ url: URL, on screens: [NSScreen], token: UUID) async -> Bool {
         let options: [NSWorkspace.DesktopImageOptionKey: Any] = [
             .imageScaling: NSImageScaling.scaleProportionallyUpOrDown.rawValue,
             .allowClipping: true,
@@ -183,7 +195,8 @@ final class WallpaperService: ObservableObject {
             }
         }
         if needsPause {
-            Thread.sleep(forTimeInterval: 0.4)
+            try? await Task.sleep(for: .milliseconds(400))
+            guard isAvailable, applyToken == token else { return false }
         }
         var ok = true
         for screen in screens {
@@ -194,6 +207,13 @@ final class WallpaperService: ObservableObject {
             }
         }
         return ok
+    }
+
+    func prefetchNearbyPages(for filter: WallpaperSupport.Filter, around page: Int) {
+        let visible = WallpaperSupport.filtered(entries, by: filter)
+        let current = WallpaperSupport.pageSlice(visible, page: page)
+        let next = WallpaperSupport.pageSlice(visible, page: page + 1)
+        WallpaperThumbnailCache.prefetch(current.map(\.previewURL) + next.map(\.previewURL))
     }
 
     func addImages() {
@@ -305,6 +325,9 @@ enum WallpaperThumbnailCache {
         return cache
     }()
 
+    private static let lock = NSLock()
+    private static var generation = UUID()
+
     private static let prefetchQueue = DispatchQueue(
         label: "com.vorssaint.utils.wallpaper-thumbs",
         qos: .utility,
@@ -323,23 +346,45 @@ enum WallpaperThumbnailCache {
         cache.removeAllObjects()
     }
 
+    // bump so in-flight scan/decode loops bail out
+    static func beginGeneration() {
+        lock.lock()
+        generation = UUID()
+        lock.unlock()
+    }
+
+    static func cancelPending() {
+        beginGeneration()
+    }
+
+    private static var currentGeneration: UUID {
+        lock.lock()
+        defer { lock.unlock() }
+        return generation
+    }
+
     static func prefetch(_ urls: [URL], maxPixel: Int = 160) {
         guard !urls.isEmpty else { return }
+        let gen = currentGeneration
         prefetchQueue.async {
-            prefetchSync(urls, maxPixel: maxPixel)
+            prefetchSync(urls, maxPixel: maxPixel, generation: gen)
         }
     }
 
     // call from a background queue only
-    static func prefetchSync(_ urls: [URL], maxPixel: Int = 160) {
+    static func prefetchSync(_ urls: [URL], maxPixel: Int = 160, generation: UUID? = nil) {
+        let gen = generation ?? currentGeneration
         for url in urls {
-            _ = loadSync(url: url, maxPixel: maxPixel)
+            guard currentGeneration == gen else { return }
+            _ = loadSync(url: url, maxPixel: maxPixel, generation: gen)
         }
     }
 
-    static func loadSync(url: URL, maxPixel: Int = 160) -> NSImage? {
+    static func loadSync(url: URL, maxPixel: Int = 160, generation: UUID? = nil) -> NSImage? {
         if let hit = image(for: url, maxPixel: maxPixel) { return hit }
+        if let generation, currentGeneration != generation { return nil }
         guard let cgImage = decodeCGThumbnail(url: url, maxPixel: maxPixel) else { return nil }
+        if let generation, currentGeneration != generation { return nil }
         let image = NSImage(cgImage: cgImage,
                             size: NSSize(width: cgImage.width, height: cgImage.height))
         store(image, for: url, maxPixel: maxPixel)

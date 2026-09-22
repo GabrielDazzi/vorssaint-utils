@@ -45,18 +45,15 @@ struct WallpaperSection: View {
                 }
             }
             .onAppear {
-                // skip rescan if already warm
-                if service.entries.isEmpty {
-                    service.refresh()
-                }
+                // own folders can change on disk; keep Apple catalog cache
+                service.refresh(forceAppleRescan: false)
                 PanelInteractionState.shared.viewKeepsPopoverOpen = true
             }
             .onDisappear {
                 PanelInteractionState.shared.viewKeepsPopoverOpen = false
             }
             .onChange(of: currentPage) { _, newPage in
-                let next = WallpaperSupport.pageSlice(allItems, page: newPage + 1)
-                WallpaperThumbnailCache.prefetch(next.map(\.previewURL))
+                service.prefetchNearbyPages(for: service.filter, around: newPage)
             }
             .onChange(of: service.filter) { _, _ in
                 page = 1

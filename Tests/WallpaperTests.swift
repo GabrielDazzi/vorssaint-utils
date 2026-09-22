@@ -108,5 +108,40 @@ enum WallpaperContract {
         let spaceDesktop = ((spaceEntry?["Displays"] as? [String: Any])?["DISP-1"] as? [String: Any])?["Desktop"]
         suite.expect(allDesktop != nil && displayDesktop != nil && spaceDesktop != nil,
                      "AllSpaces, Displays and Spaces Desktop entries are filled")
+
+        var linkedRoot: [String: Any] = [
+            "AllSpacesAndDisplays": [
+                "Type": "linked",
+                "Linked": [
+                    "LastSet": Date(timeIntervalSince1970: 1),
+                    "LastUse": Date(timeIntervalSince1970: 1),
+                    "Content": ["Choices": [] as [Any]] as [String: Any],
+                ] as [String: Any],
+            ] as [String: Any],
+            "SystemDefault": [
+                "Type": "linked",
+                "Linked": [
+                    "Content": ["Choices": [] as [Any]] as [String: Any],
+                ] as [String: Any],
+            ] as [String: Any],
+            "Displays": [:] as [String: Any],
+            "Spaces": [:] as [String: Any],
+        ]
+        suite.expect(WallpaperSupport.patchStoreRoot(&linkedRoot, imageURL: imageURL),
+                     "linked store layout is patched")
+        let linkedSlot = (linkedRoot["AllSpacesAndDisplays"] as? [String: Any])?["Linked"] as? [String: Any]
+        let linkedDesktop = (linkedRoot["AllSpacesAndDisplays"] as? [String: Any])?["Desktop"]
+        suite.expect(linkedSlot?["Content"] != nil && linkedDesktop == nil,
+                     "linked layout updates Linked and drops Desktop")
+
+        var missingAllSpaces: [String: Any] = ["Displays": [:] as [String: Any]]
+        suite.expect(!WallpaperSupport.patchStoreRoot(&missingAllSpaces, imageURL: imageURL),
+                     "store without AllSpacesAndDisplays is rejected")
+        var badDisplays: [String: Any] = [
+            "AllSpacesAndDisplays": ["Type": "idle"] as [String: Any],
+            "Displays": "nope",
+        ]
+        suite.expect(!WallpaperSupport.patchStoreRoot(&badDisplays, imageURL: imageURL),
+                     "store with a non-dict Displays value is rejected")
     }
 }

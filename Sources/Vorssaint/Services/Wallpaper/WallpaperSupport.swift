@@ -242,7 +242,8 @@ enum WallpaperSupport {
                                                    options: 0)
     }
 
-    // stamp the still into every Desktop slot (AllSpaces / Displays / Spaces)
+    // stamp the still into every wallpaper slot (AllSpaces / Displays / Spaces).
+    // unknown layouts return false so AppKit current-space apply stays the fallback.
     @discardableResult
     static func patchStoreRoot(_ root: inout [String: Any],
                                imageURL: URL,
@@ -251,7 +252,10 @@ enum WallpaperSupport {
               let options = fillScreenOptionValuesData()
         else { return false }
 
-        let desktop: [String: Any] = [
+        // Sonoma+ store always has this container; inventing it rewrites unsupported shapes
+        guard var allSpaces = root["AllSpacesAndDisplays"] as? [String: Any] else { return false }
+
+        let slot: [String: Any] = [
             "Content": [
                 "Choices": [[
                     "Provider": "com.apple.wallpaper.choice.image",
@@ -265,30 +269,35 @@ enum WallpaperSupport {
             "LastUse": now,
         ]
 
-        var allSpaces = root["AllSpacesAndDisplays"] as? [String: Any] ?? [:]
-        allSpaces["Desktop"] = desktop
+        guard patchWallpaperSlot(&allSpaces, slot: slot) else { return false }
         root["AllSpacesAndDisplays"] = allSpaces
 
-        if var displays = root["Displays"] as? [String: Any] {
+        if let displaysValue = root["Displays"] {
+            guard var displays = displaysValue as? [String: Any] else { return false }
             for key in displays.keys {
-                var entry = displays[key] as? [String: Any] ?? [:]
-                entry["Desktop"] = desktop
+                guard var entry = displays[key] as? [String: Any] else { return false }
+                guard patchWallpaperSlot(&entry, slot: slot) else { return false }
                 displays[key] = entry
             }
             root["Displays"] = displays
         }
 
-        if var spaces = root["Spaces"] as? [String: Any] {
+        if let spacesValue = root["Spaces"] {
+            guard var spaces = spacesValue as? [String: Any] else { return false }
             for spaceKey in spaces.keys {
-                var space = spaces[spaceKey] as? [String: Any] ?? [:]
-                if var defaultEntry = space["Default"] as? [String: Any] {
-                    defaultEntry["Desktop"] = desktop
+                guard var space = spaces[spaceKey] as? [String: Any] else { return false }
+                if let defaultValue = space["Default"] {
+                    guard var defaultEntry = defaultValue as? [String: Any] else { return false }
+                    guard patchWallpaperSlot(&defaultEntry, slot: slot) else { return false }
                     space["Default"] = defaultEntry
                 }
-                if var spaceDisplays = space["Displays"] as? [String: Any] {
+                if let spaceDisplaysValue = space["Displays"] {
+                    guard var spaceDisplays = spaceDisplaysValue as? [String: Any] else { return false }
                     for displayKey in spaceDisplays.keys {
-                        var entry = spaceDisplays[displayKey] as? [String: Any] ?? [:]
-                        entry["Desktop"] = desktop
+                        guard var entry = spaceDisplays[displayKey] as? [String: Any] else {
+                            return false
+                        }
+                        guard patchWallpaperSlot(&entry, slot: slot) else { return false }
                         spaceDisplays[displayKey] = entry
                     }
                     space["Displays"] = spaceDisplays
@@ -298,11 +307,33 @@ enum WallpaperSupport {
             root["Spaces"] = spaces
         }
 
-        if var systemDefault = root["SystemDefault"] as? [String: Any] {
-            systemDefault["Desktop"] = desktop
+        if let systemDefaultValue = root["SystemDefault"] {
+            guard var systemDefault = systemDefaultValue as? [String: Any] else { return false }
+            guard patchWallpaperSlot(&systemDefault, slot: slot) else { return false }
             root["SystemDefault"] = systemDefault
         }
 
         return true
+    }
+
+    // current macOS uses Type=linked + Linked; older trees use Desktop
+    @discardableResult
+    static func patchWallpaperSlot(_ container: inout [String: Any],
+                                   slot: [String: Any]) -> Bool {
+        if container["Linked"] is [String: Any] {
+            container["Linked"] = slot
+            container.removeValue(forKey: "Desktop")
+            return true
+        }
+        if container["Desktop"] is [String: Any] {
+            container["Desktop"] = slot
+            return true
+        }
+        // typed container without a slot yet (idle fixtures) — Desktop path
+        if container["Type"] != nil {
+            container["Desktop"] = slot
+            return true
+        }
+        return false
     }
 }
