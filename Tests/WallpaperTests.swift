@@ -43,6 +43,29 @@ enum WallpaperContract {
         suite.expect(own.count == 1 && own[0].source == .own && own[0].title == "shot",
                      "folder scans produce own entries")
 
+        // packages (Photos Library style) must not be walked
+        let package = ownFolder.appendingPathComponent("Library.photoslibrary", isDirectory: true)
+        let nested = package.appendingPathComponent("originals", isDirectory: true)
+        try? FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        let buried = nested.appendingPathComponent("hidden.jpg")
+        try? png.write(to: buried)
+        // mark as package the way Finder does for bundles
+        var values = URLResourceValues()
+        values.isPackage = true
+        var packageURL = package
+        try? packageURL.setResourceValues(values)
+        let withoutPackage = WallpaperSupport.images(inFolder: ownFolder)
+        suite.expect(withoutPackage.count == 1 && withoutPackage[0].lastPathComponent == "shot.jpg",
+                     "folder scans skip package contents")
+
+        var cancelledChecks = 0
+        let cancelled = WallpaperSupport.images(inFolder: ownFolder) {
+            cancelledChecks += 1
+            return cancelledChecks < 2
+        }
+        suite.expect(cancelled.isEmpty && cancelledChecks >= 2,
+                     "folder scans stop when shouldContinue becomes false")
+
         let merged = WallpaperSupport.merge(apple: apple, own: own)
         suite.expect(WallpaperSupport.filtered(merged, by: .all).count == merged.count,
                      "all keeps every entry")
@@ -131,8 +154,34 @@ enum WallpaperContract {
                      "linked store layout is patched")
         let linkedSlot = (linkedRoot["AllSpacesAndDisplays"] as? [String: Any])?["Linked"] as? [String: Any]
         let linkedDesktop = (linkedRoot["AllSpacesAndDisplays"] as? [String: Any])?["Desktop"]
+        let systemLinked = (linkedRoot["SystemDefault"] as? [String: Any])?["Linked"] as? [String: Any]
         suite.expect(linkedSlot?["Content"] != nil && linkedDesktop == nil,
                      "linked layout updates Linked and drops Desktop")
+        suite.expect(systemLinked?["Content"] != nil,
+                     "SystemDefault linked slot matches System Settings still shape")
+
+        // stray Linked on an individual container must not steal the Desktop slot
+        var individualWithStaleLinked: [String: Any] = [
+            "AllSpacesAndDisplays": [
+                "Type": "individual",
+                "Desktop": ["Type": "keep"] as [String: Any],
+                "Linked": [
+                    "Content": ["Choices": [] as [Any]] as [String: Any],
+                ] as [String: Any],
+            ] as [String: Any],
+            "Displays": [:] as [String: Any],
+            "Spaces": [:] as [String: Any],
+        ]
+        suite.expect(WallpaperSupport.patchStoreRoot(&individualWithStaleLinked, imageURL: imageURL),
+                     "individual container with a leftover Linked key still patches")
+        let individualAll = individualWithStaleLinked["AllSpacesAndDisplays"] as? [String: Any]
+        let patchedDesktop = individualAll?["Desktop"] as? [String: Any]
+        let leftoverLinked = individualAll?["Linked"] as? [String: Any]
+        let leftoverChoices = (leftoverLinked?["Content"] as? [String: Any])?["Choices"] as? [Any]
+        suite.expect(patchedDesktop?["Content"] != nil,
+                     "individual Type writes Desktop")
+        suite.expect(leftoverChoices?.isEmpty == true,
+                     "stray Linked on individual is left alone")
 
         var missingAllSpaces: [String: Any] = ["Displays": [:] as [String: Any]]
         suite.expect(!WallpaperSupport.patchStoreRoot(&missingAllSpaces, imageURL: imageURL),

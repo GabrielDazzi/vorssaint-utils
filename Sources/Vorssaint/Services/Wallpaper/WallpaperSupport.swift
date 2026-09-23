@@ -125,17 +125,26 @@ enum WallpaperSupport {
     }
 
     static func images(inFolder folder: URL,
-                       fileManager: FileManager = .default) -> [URL] {
+                       fileManager: FileManager = .default,
+                       shouldContinue: () -> Bool = { true }) -> [URL] {
+        let keys: Set<URLResourceKey> = [
+            .isRegularFileKey, .isDirectoryKey, .isPackageKey, .isSymbolicLinkKey,
+        ]
         guard let enumerator = fileManager.enumerator(
             at: folder,
-            includingPropertiesForKeys: [.isRegularFileKey],
+            includingPropertiesForKeys: Array(keys),
             options: [.skipsHiddenFiles]
         ) else { return [] }
         var urls: [URL] = []
         for case let url as URL in enumerator {
-            guard isStillImageURL(url) else { continue }
-            let values = try? url.resourceValues(forKeys: [.isRegularFileKey])
-            guard values?.isRegularFile == true else { continue }
+            guard shouldContinue() else { return [] }
+            let values = try? url.resourceValues(forKeys: keys)
+            // don't walk into .app / Photos Library / other bundles
+            if values?.isSymbolicLink == true || values?.isPackage == true {
+                enumerator.skipDescendants()
+                continue
+            }
+            guard isStillImageURL(url), values?.isRegularFile == true else { continue }
             urls.append(url)
         }
         return urls.sorted {
@@ -316,24 +325,36 @@ enum WallpaperSupport {
         return true
     }
 
-    // current macOS uses Type=linked + Linked; older trees use Desktop
+    // System Settings stills on current macOS write Type=linked + Linked (AllSpaces
+    // and SystemDefault). Desktop is the older individual/idle slot. Key off Type so
+    // a leftover Linked key on an individual container cannot steal the Desktop slot.
+    // Index.plist has no screen saver choice here; that lives outside this store.
     @discardableResult
     static func patchWallpaperSlot(_ container: inout [String: Any],
                                    slot: [String: Any]) -> Bool {
-        if container["Linked"] is [String: Any] {
+        let type = container["Type"] as? String
+
+        if type == "linked" {
+            guard container["Linked"] == nil || container["Linked"] is [String: Any] else {
+                return false
+            }
             container["Linked"] = slot
             container.removeValue(forKey: "Desktop")
             return true
         }
-        if container["Desktop"] is [String: Any] {
+
+        if type == "individual" || container["Desktop"] is [String: Any] {
             container["Desktop"] = slot
             return true
         }
-        // typed container without a slot yet (idle fixtures) — Desktop path
-        if container["Type"] != nil {
+
+        // idle (and similar) without a slot yet — Desktop path, refuse if Linked is present
+        if type != nil {
+            if container["Linked"] is [String: Any] { return false }
             container["Desktop"] = slot
             return true
         }
+
         return false
     }
 }

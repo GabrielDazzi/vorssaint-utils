@@ -521,6 +521,8 @@ enum DefaultsKey {
     static let wallpaperApplyAllDisplays = "wallpaperApplyAllDisplays"
     static let wallpaperFilter = "wallpaperFilter"
     static let wallpaperOwnBookmarks = "wallpaperOwnBookmarks"
+    // paths hidden from folder scans (does not delete files)
+    static let wallpaperExcludedOwnPaths = "wallpaperExcludedOwnPaths"
     static let scratchpadShortcutEnabled = "scratchpadShortcutEnabled"
     static let scratchpadShortcut = "scratchpadShortcut"
     static let commandBarShortcutEnabled = "commandBarShortcutEnabled"
