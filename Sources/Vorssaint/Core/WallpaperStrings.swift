@@ -7,6 +7,8 @@ import Foundation
 struct WallpaperFeatureStrings {
     let pageTitle: String
     let hubDescription: String
+    /// Sentence form for the panel layout list, whose descriptions end in a stop.
+    let panelDescription: String
     let filterAll: String
     let filterOwn: String
     let filterApple: String
@@ -53,6 +55,7 @@ extension WallpaperFeatureStrings {
     static let enUS = WallpaperFeatureStrings(
         pageTitle: "Wallpaper",
         hubDescription: "Pick a still wallpaper without opening System Settings",
+        panelDescription: "Pick a still wallpaper without opening System Settings.",
         filterAll: "All",
         filterOwn: "Your pictures",
         filterApple: "Apple",
@@ -78,6 +81,7 @@ extension WallpaperFeatureStrings {
     static let ptBR = WallpaperFeatureStrings(
         pageTitle: "Papel de parede",
         hubDescription: "Escolha um papel de parede sem abrir os Ajustes do Sistema",
+        panelDescription: "Escolha um papel de parede sem abrir os Ajustes do Sistema.",
         filterAll: "Todos",
         filterOwn: "Somente próprios",
         filterApple: "Somente da Apple",
@@ -103,6 +107,7 @@ extension WallpaperFeatureStrings {
     static let tr = WallpaperFeatureStrings(
         pageTitle: "Duvar kağıdı",
         hubDescription: "Sistem Ayarları’nı açmadan sabit bir duvar kağıdı seçin",
+        panelDescription: "Sistem Ayarları’nı açmadan sabit bir duvar kağıdı seçin.",
         filterAll: "Tümü",
         filterOwn: "Sadece sizinki",
         filterApple: "Sadece Apple",
@@ -128,6 +133,7 @@ extension WallpaperFeatureStrings {
     static let ru = WallpaperFeatureStrings(
         pageTitle: "Обои",
         hubDescription: "Выберите статичные обои без открытия Системных настроек",
+        panelDescription: "Выберите статичные обои без открытия Системных настроек.",
         filterAll: "Все",
         filterOwn: "Только свои",
         filterApple: "Только Apple",
@@ -153,6 +159,7 @@ extension WallpaperFeatureStrings {
     static let es = WallpaperFeatureStrings(
         pageTitle: "Fondo de pantalla",
         hubDescription: "Elige un fondo fijo sin abrir Ajustes del Sistema",
+        panelDescription: "Elige un fondo fijo sin abrir Ajustes del Sistema.",
         filterAll: "Todos",
         filterOwn: "Solo propios",
         filterApple: "Solo de Apple",
@@ -178,6 +185,7 @@ extension WallpaperFeatureStrings {
     static let de = WallpaperFeatureStrings(
         pageTitle: "Hintergrundbild",
         hubDescription: "Wähle ein Standbild ohne die Systemeinstellungen zu öffnen",
+        panelDescription: "Wähle ein Standbild ohne die Systemeinstellungen zu öffnen.",
         filterAll: "Alle",
         filterOwn: "Nur eigene",
         filterApple: "Nur Apple",
@@ -203,6 +211,7 @@ extension WallpaperFeatureStrings {
     static let fr = WallpaperFeatureStrings(
         pageTitle: "Fond d’écran",
         hubDescription: "Choisissez une image fixe sans ouvrir Réglages Système",
+        panelDescription: "Choisissez une image fixe sans ouvrir Réglages Système.",
         filterAll: "Tous",
         filterOwn: "Seulement les vôtres",
         filterApple: "Seulement Apple",
@@ -228,6 +237,7 @@ extension WallpaperFeatureStrings {
     static let it = WallpaperFeatureStrings(
         pageTitle: "Sfondo",
         hubDescription: "Scegli uno sfondo fisso senza aprire Impostazioni di Sistema",
+        panelDescription: "Scegli uno sfondo fisso senza aprire Impostazioni di Sistema.",
         filterAll: "Tutti",
         filterOwn: "Solo i tuoi",
         filterApple: "Solo Apple",
@@ -253,6 +263,7 @@ extension WallpaperFeatureStrings {
     static let ja = WallpaperFeatureStrings(
         pageTitle: "壁紙",
         hubDescription: "システム設定を開かずに静止壁紙を選べます",
+        panelDescription: "システム設定を開かずに静止壁紙を選べます。",
         filterAll: "すべて",
         filterOwn: "自分のみ",
         filterApple: "Appleのみ",
@@ -278,6 +289,7 @@ extension WallpaperFeatureStrings {
     static let ko = WallpaperFeatureStrings(
         pageTitle: "배경화면",
         hubDescription: "시스템 설정을 열지 않고 고정 배경을 고릅니다",
+        panelDescription: "시스템 설정을 열지 않고 고정 배경을 고릅니다.",
         filterAll: "전체",
         filterOwn: "내 사진만",
         filterApple: "Apple만",
@@ -303,6 +315,7 @@ extension WallpaperFeatureStrings {
     static let zhHans = WallpaperFeatureStrings(
         pageTitle: "壁纸",
         hubDescription: "无需打开系统设置即可选择静态壁纸",
+        panelDescription: "无需打开系统设置即可选择静态壁纸。",
         filterAll: "全部",
         filterOwn: "仅自己的",
         filterApple: "仅 Apple",
@@ -328,6 +341,7 @@ extension WallpaperFeatureStrings {
     static let zhTW = WallpaperFeatureStrings(
         pageTitle: "桌布",
         hubDescription: "不必打開系統設定即可選擇靜態桌布",
+        panelDescription: "不必打開系統設定即可選擇靜態桌布。",
         filterAll: "全部",
         filterOwn: "僅自己的",
         filterApple: "僅 Apple",
@@ -353,6 +367,7 @@ extension WallpaperFeatureStrings {
     static let zhHK = WallpaperFeatureStrings(
         pageTitle: "桌布",
         hubDescription: "唔使開系統設定都可以揀靜態桌布",
+        panelDescription: "唔使開系統設定都可以揀靜態桌布。",
         filterAll: "全部",
         filterOwn: "淨係自己嘅",
         filterApple: "淨係 Apple",

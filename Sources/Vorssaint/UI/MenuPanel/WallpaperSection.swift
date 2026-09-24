@@ -166,15 +166,21 @@ struct WallpaperSection: View {
         }
     }
 
-    // fixed 3x8 so a short page does not collapse the panel
+    // with several pages every page keeps the full 3x8 height so paging does
+    // not resize the panel; a single page only takes the rows it fills
     private static let thumbHeight: CGFloat = 54
     private static let gridSpacing: CGFloat = 8
     private static let columnCount = 3
     private static var rowCount: Int {
         (WallpaperSupport.pageSize + columnCount - 1) / columnCount
     }
-    private static var galleryHeight: CGFloat {
-        CGFloat(rowCount) * thumbHeight + CGFloat(max(0, rowCount - 1)) * gridSpacing
+    private static func galleryHeight(rows: Int) -> CGFloat {
+        CGFloat(rows) * thumbHeight + CGFloat(max(0, rows - 1)) * gridSpacing
+    }
+    private var galleryRows: Int {
+        if pageCount > 1 { return Self.rowCount }
+        if allItems.isEmpty { return 2 }
+        return (allItems.count + Self.columnCount - 1) / Self.columnCount
     }
 
     @ViewBuilder
@@ -217,41 +223,44 @@ struct WallpaperSection: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: Self.galleryHeight, maxHeight: Self.galleryHeight,
+        .frame(maxWidth: .infinity,
+               minHeight: Self.galleryHeight(rows: galleryRows),
+               maxHeight: Self.galleryHeight(rows: galleryRows),
                alignment: .topLeading)
     }
 
     private var pager: some View {
         HStack(spacing: 12) {
-            Button {
-                page = max(1, currentPage - 1)
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 11, weight: .semibold))
-                    .frame(width: 22, height: 22)
-            }
-            .buttonStyle(.borderless)
-            .disabled(currentPage <= 1 || pageCount <= 1)
-            .help(text.previousPage)
-            .accessibilityLabel(text.previousPage)
+            if pageCount > 1 {
+                Button {
+                    page = max(1, currentPage - 1)
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 22, height: 22)
+                }
+                .buttonStyle(.borderless)
+                .disabled(currentPage <= 1)
+                .help(text.previousPage)
+                .accessibilityLabel(text.previousPage)
 
-            Text(pageCount > 1 ? "\(currentPage) / \(pageCount)" : "1 / 1")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-                .opacity(pageCount > 1 ? 1 : 0.35)
+                Text("\(currentPage) / \(pageCount)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
 
-            Button {
-                page = min(pageCount, currentPage + 1)
-            } label: {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .frame(width: 22, height: 22)
+                Button {
+                    page = min(pageCount, currentPage + 1)
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 22, height: 22)
+                }
+                .buttonStyle(.borderless)
+                .disabled(currentPage >= pageCount)
+                .help(text.nextPage)
+                .accessibilityLabel(text.nextPage)
             }
-            .buttonStyle(.borderless)
-            .disabled(currentPage >= pageCount || pageCount <= 1)
-            .help(text.nextPage)
-            .accessibilityLabel(text.nextPage)
 
             Spacer(minLength: 8)
             Button(text.openSystemSettings) {
