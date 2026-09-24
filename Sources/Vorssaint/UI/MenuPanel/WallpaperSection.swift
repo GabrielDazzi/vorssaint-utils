@@ -59,12 +59,10 @@ struct WallpaperSection: View {
             .onAppear {
                 // own folders can change on disk; keep Apple catalog cache
                 service.refresh(forceAppleRescan: false)
-                PanelInteractionState.shared.viewKeepsPopoverOpen = true
             }
             .onDisappear {
                 isRemovingSources = false
                 service.cancelThumbs()
-                PanelInteractionState.shared.viewKeepsPopoverOpen = false
             }
             .onChange(of: currentPage) { _, newPage in
                 service.preparePageThumbs(for: service.filter, around: newPage)

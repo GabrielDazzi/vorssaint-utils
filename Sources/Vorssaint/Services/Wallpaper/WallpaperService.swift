@@ -274,7 +274,7 @@ final class WallpaperService: ObservableObject {
     }
 
     // iCloud Drive placeholder — pull the bytes before NSWorkspace / store write
-    private func needsCloudDownload(_ url: URL) -> Bool {
+    static func needsCloudDownload(_ url: URL) -> Bool {
         let keys: Set<URLResourceKey> = [
             .isUbiquitousItemKey,
             .ubiquitousItemDownloadingStatusKey,
@@ -287,7 +287,7 @@ final class WallpaperService: ObservableObject {
 
     @MainActor
     private func ensureLocalFile(_ url: URL, token: UUID) async -> Bool {
-        guard needsCloudDownload(url) else { return true }
+        guard Self.needsCloudDownload(url) else { return true }
         isDownloading = true
         do {
             try FileManager.default.startDownloadingUbiquitousItem(at: url)
@@ -301,10 +301,10 @@ final class WallpaperService: ObservableObject {
                 .ubiquitousItemDownloadingError) != nil {
                 return false
             }
-            if !needsCloudDownload(url) { return true }
+            if !Self.needsCloudDownload(url) { return true }
             try? await Task.sleep(for: .milliseconds(250))
         }
-        return !needsCloudDownload(url)
+        return !Self.needsCloudDownload(url)
     }
 
     private func setApplyGeneration(_ token: UUID) {
@@ -400,7 +400,10 @@ final class WallpaperService: ObservableObject {
 
     private func present(_ panel: NSOpenPanel, completion: @escaping ([URL]) -> Void) {
         openPanel = panel
+        // keep the menu panel up only while the picker is on screen
+        PanelInteractionState.shared.isPresentingPopoverModal = true
         panel.begin { [weak self] response in
+            PanelInteractionState.shared.isPresentingPopoverModal = false
             guard let self else { return }
             self.openPanel = nil
             guard response == .OK else { return }
@@ -685,6 +688,9 @@ enum WallpaperThumbnailCache {
     }
 
     private static func decodeCGThumbnail(url: URL, maxPixel: Int) -> CGImage? {
+        // reading an iCloud placeholder downloads the whole file; show the
+        // placeholder cell instead until apply brings the picture down
+        guard !WallpaperService.needsCloudDownload(url) else { return nil }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
