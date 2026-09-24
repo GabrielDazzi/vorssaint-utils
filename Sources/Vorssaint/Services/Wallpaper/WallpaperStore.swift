@@ -7,12 +7,11 @@ import Foundation
 // (setDesktopImageURL alone only hits the current Space)
 //
 // Backup policy:
-// - Index.plist.vorssaint-bak is a one-shot copy taken before the first apply-all
-//   write. Later applies leave that file alone.
-// - Feature uninstall does not delete the bak (Index may stay patched; bak is
-//   the only pre-Vorssaint snapshot for manual recovery).
-// - restoreOriginalIndex() copies bak over Index.plist, restarts WallpaperAgent,
-//   then deletes the bak. Nothing calls that automatically today.
+// - One-shot copy of Index.plist before the first apply-all write, kept under
+//   the app Application Support folder (cleared with the rest of the app).
+// - Feature uninstall deletes that copy. Later applies never overwrite it.
+// - No in-app restore path; AppKit current-space apply remains the soft fallback
+//   when the store patch cannot run.
 enum WallpaperStore {
     static var indexURL: URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory,
@@ -25,9 +24,37 @@ enum WallpaperStore {
             .appendingPathComponent("Index.plist", isDirectory: false)
     }
 
+    // lives with the app, not in the system wallpaper store
     static var backupURL: URL {
+        let fallback = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+            .appendingPathComponent("Library/Application Support/com.vorssaint.utils",
+                                    isDirectory: true)
+        let container = PrivateFileStore.containerURL ?? fallback
+        return container.appendingPathComponent("WallpaperIndex.vorssaint-bak",
+                                                isDirectory: false)
+    }
+
+    // leftover from when the bak lived next to Index.plist
+    private static var legacySystemBackupURL: URL {
         indexURL.deletingLastPathComponent()
             .appendingPathComponent("Index.plist.vorssaint-bak", isDirectory: false)
+    }
+
+    // move a pristine system-side bak into App Support once (older builds)
+    static func migrateLegacyBackupIfNeeded() {
+        let backup = backupURL
+        let legacy = legacySystemBackupURL
+        guard !FileManager.default.fileExists(atPath: backup.path),
+              FileManager.default.fileExists(atPath: legacy.path)
+        else { return }
+        let parent = backup.deletingLastPathComponent()
+        _ = PrivateFileStore.createDirectory(at: parent)
+        do {
+            try FileManager.default.copyItem(at: legacy, to: backup)
+            try? FileManager.default.removeItem(at: legacy)
+        } catch {
+            // leave legacy in place for a later apply/migrate
+        }
     }
 
     @discardableResult
@@ -55,16 +82,7 @@ enum WallpaperStore {
         guard WallpaperSupport.patchStoreRoot(&root, imageURL: url) else { return false }
         guard shouldContinue() else { return false }
 
-        let backup = backupURL
-        // keep the first pre-feature copy; never overwrite it with a later apply
-        if !FileManager.default.fileExists(atPath: backup.path) {
-            do {
-                try FileManager.default.copyItem(at: index, to: backup)
-            } catch {
-                return false
-            }
-        }
-        guard FileManager.default.fileExists(atPath: backup.path) else { return false }
+        guard ensureBackup(of: index) else { return false }
         guard shouldContinue() else { return false }
 
         guard let written = try? PropertyListSerialization.data(
@@ -84,32 +102,29 @@ enum WallpaperStore {
         return true
     }
 
-    // recovery only — replace Index with bak via temp, bounce agent, drop bak
-    @discardableResult
-    static func restoreOriginalIndex() -> Bool {
-        let index = indexURL
+    // first pre-feature copy only; never overwrite with a later apply
+    private static func ensureBackup(of index: URL) -> Bool {
+        migrateLegacyBackupIfNeeded()
         let backup = backupURL
-        guard FileManager.default.fileExists(atPath: backup.path) else { return false }
-        let temp = index.deletingLastPathComponent()
-            .appendingPathComponent("Index.plist.vorssaint-restore", isDirectory: false)
+        if FileManager.default.fileExists(atPath: backup.path) { return true }
+        let parent = backup.deletingLastPathComponent()
+        _ = PrivateFileStore.createDirectory(at: parent)
         do {
-            if FileManager.default.fileExists(atPath: temp.path) {
-                try FileManager.default.removeItem(at: temp)
-            }
-            try FileManager.default.copyItem(at: backup, to: temp)
-            _ = try FileManager.default.replaceItemAt(index, withItemAt: temp)
+            try FileManager.default.copyItem(at: index, to: backup)
         } catch {
-            try? FileManager.default.removeItem(at: temp)
             return false
         }
-        _ = Shell.run("/usr/bin/killall", ["WallpaperAgent"])
-        removeBackup()
-        return true
+        return FileManager.default.fileExists(atPath: backup.path)
     }
 
     static func removeBackup() {
         let backup = backupURL
-        guard FileManager.default.fileExists(atPath: backup.path) else { return }
-        try? FileManager.default.removeItem(at: backup)
+        if FileManager.default.fileExists(atPath: backup.path) {
+            try? FileManager.default.removeItem(at: backup)
+        }
+        let legacy = legacySystemBackupURL
+        if FileManager.default.fileExists(atPath: legacy.path) {
+            try? FileManager.default.removeItem(at: legacy)
+        }
     }
 }

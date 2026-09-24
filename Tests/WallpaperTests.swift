@@ -28,12 +28,26 @@ enum WallpaperContract {
                                                        options: 0)
         try? data?.write(to: made)
 
-        let apple = WallpaperSupport.enumerateAppleEntries(at: appleRoot)
-        suite.expect(apple.contains { $0.title == "Plain Blue" && $0.source == .apple },
+        // thumb-only madesktop must not appear (would apply a blurry preview)
+        let appleThumbOnly = WallpaperSupport.enumerateAppleEntries(at: appleRoot)
+        suite.expect(appleThumbOnly.contains { $0.title == "Plain Blue" && $0.source == .apple },
                      "top-level stills become Apple entries")
+        suite.expect(!appleThumbOnly.contains { $0.title == "Peak" },
+                     "madesktop without a full-size still is omitted")
+
+        let wallpapers = appleRoot
+            .appendingPathComponent(".wallpapers", isDirectory: true)
+            .appendingPathComponent("Peak", isDirectory: true)
+        try? FileManager.default.createDirectory(at: wallpapers, withIntermediateDirectories: true)
+        let fullStill = wallpapers.appendingPathComponent("Peak.heic")
+        try? png.write(to: fullStill)
+
+        let apple = WallpaperSupport.enumerateAppleEntries(at: appleRoot)
         suite.expect(apple.contains {
-            $0.title == "Peak" && $0.source == .apple && $0.imageURL.path == thumb.path
-        }, "madesktop entries resolve through their thumbnail still")
+            $0.title == "Peak" && $0.source == .apple
+                && $0.imageURL.path == fullStill.path
+                && $0.previewURL.path == thumb.path
+        }, "madesktop with a full-size still uses the still and keeps the thumb as preview")
 
         let ownFolder = appleRoot.appendingPathComponent("Mine", isDirectory: true)
         try? FileManager.default.createDirectory(at: ownFolder, withIntermediateDirectories: true)
@@ -132,19 +146,36 @@ enum WallpaperContract {
         suite.expect(allDesktop != nil && displayDesktop != nil && spaceDesktop != nil,
                      "AllSpaces, Displays and Spaces Desktop entries are filled")
 
+        // shape System Settings leaves after picking a still (Type linked + image choice)
+        let priorConfig = WallpaperSupport.imageFileConfigurationData(
+            for: URL(fileURLWithPath: "/tmp/prior-system-settings.png")
+        )
+        let priorOptions = WallpaperSupport.fillScreenOptionValuesData()
+        let priorChoice: [String: Any] = [
+            "Provider": "com.apple.wallpaper.choice.image",
+            "Files": [] as [Any],
+            "Configuration": priorConfig as Any,
+        ]
+        let priorContent: [String: Any] = [
+            "Choices": [priorChoice],
+            "Shuffle": "$null",
+            "EncodedOptionValues": priorOptions as Any,
+        ]
         var linkedRoot: [String: Any] = [
             "AllSpacesAndDisplays": [
                 "Type": "linked",
                 "Linked": [
                     "LastSet": Date(timeIntervalSince1970: 1),
                     "LastUse": Date(timeIntervalSince1970: 1),
-                    "Content": ["Choices": [] as [Any]] as [String: Any],
+                    "Content": priorContent,
                 ] as [String: Any],
             ] as [String: Any],
             "SystemDefault": [
                 "Type": "linked",
                 "Linked": [
-                    "Content": ["Choices": [] as [Any]] as [String: Any],
+                    "LastSet": Date(timeIntervalSince1970: 1),
+                    "LastUse": Date(timeIntervalSince1970: 1),
+                    "Content": priorContent,
                 ] as [String: Any],
             ] as [String: Any],
             "Displays": [:] as [String: Any],
@@ -155,10 +186,26 @@ enum WallpaperContract {
         let linkedSlot = (linkedRoot["AllSpacesAndDisplays"] as? [String: Any])?["Linked"] as? [String: Any]
         let linkedDesktop = (linkedRoot["AllSpacesAndDisplays"] as? [String: Any])?["Desktop"]
         let systemLinked = (linkedRoot["SystemDefault"] as? [String: Any])?["Linked"] as? [String: Any]
+        let linkedChoicesAny = (linkedSlot?["Content"] as? [String: Any])?["Choices"] as? [Any]
+        let linkedFirst = linkedChoicesAny?.first as? [String: Any]
+        let linkedProvider = linkedFirst?["Provider"] as? String
+        let linkedConfig = linkedFirst?["Configuration"] as? Data
+        var linkedRelative: String?
+        if let linkedConfig,
+           let decoded = try? PropertyListSerialization.propertyList(from: linkedConfig,
+                                                                     options: [],
+                                                                     format: nil) as? [String: Any],
+           let urlDict = decoded["url"] as? [String: Any] {
+            linkedRelative = urlDict["relative"] as? String
+        }
         suite.expect(linkedSlot?["Content"] != nil && linkedDesktop == nil,
                      "linked layout updates Linked and drops Desktop")
         suite.expect(systemLinked?["Content"] != nil,
                      "SystemDefault linked slot matches System Settings still shape")
+        suite.expect(linkedProvider == "com.apple.wallpaper.choice.image"
+                        && linkedRelative == imageURL.absoluteString
+                        && linkedRelative != URL(fileURLWithPath: "/tmp/prior-system-settings.png").absoluteString,
+                     "linked patch replaces the System Settings imageFile choice")
 
         // stray Linked on an individual container must not steal the Desktop slot
         var individualWithStaleLinked: [String: Any] = [

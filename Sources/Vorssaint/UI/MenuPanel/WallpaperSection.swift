@@ -46,7 +46,11 @@ struct WallpaperSection: View {
                 }
                 gallery
                 pager
-                if let error = service.lastError {
+                if service.isDownloading {
+                    Text(text.downloading)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if let error = service.lastError {
                     Text(error)
                         .font(.caption)
                         .foregroundStyle(.orange)
@@ -126,7 +130,7 @@ struct WallpaperSection: View {
         }
     }
 
-    // folders + unreachable bookmarks (no gallery cell) — chips with X
+    // folders + unreachable + orphan file bookmarks
     private var sourceRemoveStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
@@ -203,7 +207,7 @@ struct WallpaperSection: View {
                             thumbEpoch: service.thumbEpoch,
                             height: Self.thumbHeight,
                             showsRemoveBadge: isRemovingSources && entry.source == .own,
-                            appliesEnabled: !isRemovingSources,
+                            appliesEnabled: !isRemovingSources && !service.isApplying,
                             removeLabel: text.removeAdded
                         ) {
                             service.apply(entry)

@@ -24,6 +24,9 @@ final class WallpaperService: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var appliedPath: String?
     @Published private(set) var isLoading = false
+    // true while materializing an iCloud still or finishing apply
+    @Published private(set) var isApplying = false
+    @Published private(set) var isDownloading = false
     // bumps when thumb generation changes so cell .task restarts
     @Published private(set) var thumbEpoch = 0
 
@@ -32,6 +35,7 @@ final class WallpaperService: ObservableObject {
     private var excludedOwnPaths: Set<String> = []
     // file bookmark path → Data (built in rebuildOwnSources; gallery X match without FS)
     private var fileBookmarkByPath: [String: Data] = [:]
+    private var pathByFileBookmark: [Data: String] = [:]
     private var scopedURLs: [URL] = []
     private var openPanel: NSOpenPanel?
     // Apple catalog barely changes; keep after first scan to avoid tab hitch
@@ -55,9 +59,18 @@ final class WallpaperService: ObservableObject {
         ownSources.filter(\.isFolder)
     }
 
-    // folders + unreachable (no gallery cell) — chips in remove mode
+    // folders + unreachable + file bookmarks with no gallery cell (after catalog is ready)
     var removableChipSources: [OwnSource] {
-        ownSources.filter { $0.isFolder || !$0.isReachable }
+        // while scanning, every file bookmark would look like an orphan
+        if isLoading {
+            return ownSources.filter { $0.isFolder || !$0.isReachable }
+        }
+        let ownIDs = Set(entries.lazy.filter { $0.source == .own }.map(\.id))
+        return ownSources.filter { source in
+            if source.isFolder || !source.isReachable { return true }
+            guard let path = pathByFileBookmark[source.bookmark] else { return true }
+            return !ownIDs.contains(path)
+        }
     }
 
     var visibleEntries: [WallpaperSupport.Entry] {
@@ -93,9 +106,13 @@ final class WallpaperService: ObservableObject {
             lastError = nil
             appliedPath = nil
             isLoading = false
+            isApplying = false
+            isDownloading = false
+            WallpaperStore.removeBackup()
             return
         }
         // warm catalog before first open
+        WallpaperStore.migrateLegacyBackupIfNeeded()
         refresh(forceAppleRescan: false)
     }
 
@@ -208,8 +225,23 @@ final class WallpaperService: ObservableObject {
         applyToken = token
         setApplyGeneration(token)
         let applyAll = applyAllDisplays
+        isApplying = true
         Task { @MainActor [weak self] in
             guard let self else { return }
+            defer {
+                if self.applyToken == token {
+                    self.isApplying = false
+                    self.isDownloading = false
+                }
+            }
+
+            let localOK = await self.ensureLocalFile(url, token: token)
+            guard self.isAvailable, self.applyToken == token else { return }
+            if !localOK {
+                self.lastError = FeatureStrings.wallpaper(L10n.shared.language).downloadFailed
+                return
+            }
+
             let currentOK = await self.setDesktopImage(url, on: chosen, token: token)
             guard self.isAvailable, self.applyToken == token else { return }
 
@@ -225,10 +257,9 @@ final class WallpaperService: ObservableObject {
                 guard self.isAvailable, self.applyToken == token else { return }
                 if allOK || currentOK {
                     self.appliedPath = url.path
-                    if !allOK {
-                        self.lastError = FeatureStrings.wallpaper(L10n.shared.language).applyFailed
-                    }
-                } else {
+                }
+                // store patch miss keeps current-space apply; do not banner as failure
+                if !allOK && !currentOK {
                     self.lastError = FeatureStrings.wallpaper(L10n.shared.language).applyFailed
                 }
                 return
@@ -240,6 +271,40 @@ final class WallpaperService: ObservableObject {
                 self.lastError = FeatureStrings.wallpaper(L10n.shared.language).applyFailed
             }
         }
+    }
+
+    // iCloud Drive placeholder — pull the bytes before NSWorkspace / store write
+    private func needsCloudDownload(_ url: URL) -> Bool {
+        let keys: Set<URLResourceKey> = [
+            .isUbiquitousItemKey,
+            .ubiquitousItemDownloadingStatusKey,
+        ]
+        guard let values = try? url.resourceValues(forKeys: keys),
+              values.isUbiquitousItem == true
+        else { return false }
+        return values.ubiquitousItemDownloadingStatus != .current
+    }
+
+    @MainActor
+    private func ensureLocalFile(_ url: URL, token: UUID) async -> Bool {
+        guard needsCloudDownload(url) else { return true }
+        isDownloading = true
+        do {
+            try FileManager.default.startDownloadingUbiquitousItem(at: url)
+        } catch {
+            return false
+        }
+        let deadline = ContinuousClock.now + .seconds(60)
+        while ContinuousClock.now < deadline {
+            guard isAvailable, applyToken == token else { return false }
+            if (try? url.resourceValues(forKeys: [.ubiquitousItemDownloadingErrorKey])
+                .ubiquitousItemDownloadingError) != nil {
+                return false
+            }
+            if !needsCloudDownload(url) { return true }
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+        return !needsCloudDownload(url)
     }
 
     private func setApplyGeneration(_ token: UUID) {
@@ -305,7 +370,9 @@ final class WallpaperService: ObservableObject {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
-        panel.allowedContentTypes = [.image]
+        // match gallery extensions so a pick always gets a cell
+        let types = WallpaperSupport.imageExtensions.compactMap { UTType(filenameExtension: $0) }
+        panel.allowedContentTypes = types.isEmpty ? [.image] : types
         panel.message = FeatureStrings.wallpaper(L10n.shared.language).addImagePrompt
         present(panel) { [weak self] urls in
             self?.remember(urls: urls)
@@ -343,6 +410,11 @@ final class WallpaperService: ObservableObject {
 
     private func remember(urls: [URL]) {
         for url in urls {
+            var isDir: ObjCBool = false
+            let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+            if exists && !isDir.boolValue && !WallpaperSupport.isStillImageURL(url) {
+                continue
+            }
             guard let data = try? url.bookmarkData(options: .withSecurityScope,
                                                    includingResourceValuesForKeys: nil,
                                                    relativeTo: nil)
@@ -355,8 +427,7 @@ final class WallpaperService: ObservableObject {
             ownBookmarks.append(data)
             // re-adding clears a prior hide of this path (and children if folder)
             excludedOwnPaths.remove(path)
-            var isDir: ObjCBool = false
-            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+            if exists && isDir.boolValue {
                 excludedOwnPaths = excludedOwnPaths.filter { !$0.hasPrefix(path + "/") }
             }
         }
@@ -434,6 +505,7 @@ final class WallpaperService: ObservableObject {
             }
         }
         var fileMap: [String: Data] = [:]
+        var pathMap: [Data: String] = [:]
         ownSources = ownBookmarks.enumerated().map { index, data in
             let id = bookmarkIdentity(data, index: index)
             let url = byData[data] ?? resolveBookmark(data)
@@ -442,7 +514,9 @@ final class WallpaperService: ObservableObject {
                 let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
                 let isFolder = exists ? isDir.boolValue : url.hasDirectoryPath
                 if exists && !isDir.boolValue {
-                    fileMap[url.standardizedFileURL.path] = data
+                    let path = url.standardizedFileURL.path
+                    fileMap[path] = data
+                    pathMap[data] = path
                 }
                 return OwnSource(id: id,
                                  title: url.lastPathComponent,
@@ -458,6 +532,7 @@ final class WallpaperService: ObservableObject {
                              bookmark: data)
         }
         fileBookmarkByPath = fileMap
+        pathByFileBookmark = pathMap
     }
 
     // stable ForEach id from bookmark bytes (index is fallback salt only)

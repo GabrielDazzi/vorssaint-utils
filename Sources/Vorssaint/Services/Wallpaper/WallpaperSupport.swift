@@ -87,12 +87,9 @@ enum WallpaperSupport {
         let plistThumbnail = madesktopThumbnailPath(at: url).map { URL(fileURLWithPath: $0) }
 
         let imageURL: URL?
+        // full-size still only; .thumbnails / thumbnailPath are preview-sized
         if fileManager.fileExists(atPath: wallpaperAsset.path) {
             imageURL = wallpaperAsset
-        } else if let plistThumbnail, fileManager.fileExists(atPath: plistThumbnail.path) {
-            imageURL = plistThumbnail
-        } else if fileManager.fileExists(atPath: thumbnail.path) {
-            imageURL = thumbnail
         } else {
             imageURL = nil
         }
@@ -325,10 +322,14 @@ enum WallpaperSupport {
         return true
     }
 
-    // System Settings stills on current macOS write Type=linked + Linked (AllSpaces
-    // and SystemDefault). Desktop is the older individual/idle slot. Key off Type so
-    // a leftover Linked key on an individual container cannot steal the Desktop slot.
-    // Index.plist has no screen saver choice here; that lives outside this store.
+    // System Settings stills (Sonoma+) write Type=linked + Linked on
+    // AllSpacesAndDisplays and SystemDefault, with Content.Choices Provider
+    // com.apple.wallpaper.choice.image and an imageFile Configuration blob.
+    // Captured from a store that only System Settings wrote (no Vorssaint bak).
+    // Index.plist has no screen saver keys; that choice lives outside this store,
+    // so replacing Linked does not rewrite a screen saver slot here.
+    // Desktop is the older individual/idle slot. Key off Type so a leftover
+    // Linked key on an individual container cannot steal the Desktop slot.
     @discardableResult
     static func patchWallpaperSlot(_ container: inout [String: Any],
                                    slot: [String: Any]) -> Bool {

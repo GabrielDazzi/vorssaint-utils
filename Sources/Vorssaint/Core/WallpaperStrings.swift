@@ -22,6 +22,8 @@ struct WallpaperFeatureStrings {
     let emptyAll: String
     let emptyOwn: String
     let emptyApple: String
+    let downloading: String
+    let downloadFailed: String
     let applyFailed: String
     let previousPage: String
     let nextPage: String
@@ -66,6 +68,8 @@ extension WallpaperFeatureStrings {
         emptyAll: "No wallpapers found",
         emptyOwn: "No pictures added yet",
         emptyApple: "No Apple stills found",
+        downloading: "Downloading…",
+        downloadFailed: "Could not download the wallpaper",
         applyFailed: "Could not set the wallpaper",
         previousPage: "Previous",
         nextPage: "Next"
@@ -89,6 +93,8 @@ extension WallpaperFeatureStrings {
         emptyAll: "Nenhum papel de parede encontrado",
         emptyOwn: "Nenhuma imagem adicionada ainda",
         emptyApple: "Nenhum papel da Apple encontrado",
+        downloading: "Baixando…",
+        downloadFailed: "Não foi possível baixar o papel de parede",
         applyFailed: "Não foi possível definir o papel de parede",
         previousPage: "Anterior",
         nextPage: "Próximo"
@@ -112,6 +118,8 @@ extension WallpaperFeatureStrings {
         emptyAll: "Duvar kağıdı bulunamadı",
         emptyOwn: "Henüz görüntü eklenmedi",
         emptyApple: "Apple duvar kağıdı bulunamadı",
+        downloading: "İndiriliyor…",
+        downloadFailed: "Duvar kağıdı indirilemedi",
         applyFailed: "Duvar kağıdı ayarlanamadı",
         previousPage: "Önceki",
         nextPage: "Sonraki"
@@ -135,6 +143,8 @@ extension WallpaperFeatureStrings {
         emptyAll: "Обои не найдены",
         emptyOwn: "Изображения ещё не добавлены",
         emptyApple: "Обои Apple не найдены",
+        downloading: "Загрузка…",
+        downloadFailed: "Не удалось загрузить обои",
         applyFailed: "Не удалось установить обои",
         previousPage: "Назад",
         nextPage: "Далее"
@@ -158,6 +168,8 @@ extension WallpaperFeatureStrings {
         emptyAll: "No se encontraron fondos",
         emptyOwn: "Aún no hay imágenes añadidas",
         emptyApple: "No se encontraron fondos de Apple",
+        downloading: "Descargando…",
+        downloadFailed: "No se pudo descargar el fondo",
         applyFailed: "No se pudo establecer el fondo",
         previousPage: "Anterior",
         nextPage: "Siguiente"
@@ -181,6 +193,8 @@ extension WallpaperFeatureStrings {
         emptyAll: "Keine Hintergrundbilder gefunden",
         emptyOwn: "Noch keine eigenen Bilder",
         emptyApple: "Keine Apple-Bilder gefunden",
+        downloading: "Wird geladen…",
+        downloadFailed: "Hintergrundbild konnte nicht geladen werden",
         applyFailed: "Hintergrundbild konnte nicht gesetzt werden",
         previousPage: "Zurück",
         nextPage: "Weiter"
@@ -204,6 +218,8 @@ extension WallpaperFeatureStrings {
         emptyAll: "Aucun fond d’écran trouvé",
         emptyOwn: "Aucune image ajoutée pour l’instant",
         emptyApple: "Aucun fond Apple trouvé",
+        downloading: "Téléchargement…",
+        downloadFailed: "Impossible de télécharger le fond d’écran",
         applyFailed: "Impossible de définir le fond d’écran",
         previousPage: "Précédent",
         nextPage: "Suivant"
@@ -227,6 +243,8 @@ extension WallpaperFeatureStrings {
         emptyAll: "Nessuno sfondo trovato",
         emptyOwn: "Nessuna immagine aggiunta ancora",
         emptyApple: "Nessuno sfondo Apple trovato",
+        downloading: "Download in corso…",
+        downloadFailed: "Impossibile scaricare lo sfondo",
         applyFailed: "Impossibile impostare lo sfondo",
         previousPage: "Precedente",
         nextPage: "Successiva"
@@ -250,6 +268,8 @@ extension WallpaperFeatureStrings {
         emptyAll: "壁紙が見つかりません",
         emptyOwn: "まだ画像がありません",
         emptyApple: "Appleの壁紙が見つかりません",
+        downloading: "ダウンロード中…",
+        downloadFailed: "壁紙をダウンロードできませんでした",
         applyFailed: "壁紙を設定できませんでした",
         previousPage: "前へ",
         nextPage: "次へ"
@@ -273,6 +293,8 @@ extension WallpaperFeatureStrings {
         emptyAll: "배경화면을 찾을 수 없습니다",
         emptyOwn: "아직 추가한 이미지가 없습니다",
         emptyApple: "Apple 배경을 찾을 수 없습니다",
+        downloading: "다운로드 중…",
+        downloadFailed: "배경화면을 다운로드할 수 없습니다",
         applyFailed: "배경화면을 설정할 수 없습니다",
         previousPage: "이전",
         nextPage: "다음"
@@ -296,6 +318,8 @@ extension WallpaperFeatureStrings {
         emptyAll: "未找到壁纸",
         emptyOwn: "尚未添加图片",
         emptyApple: "未找到 Apple 壁纸",
+        downloading: "正在下载…",
+        downloadFailed: "无法下载壁纸",
         applyFailed: "无法设置壁纸",
         previousPage: "上一页",
         nextPage: "下一页"
@@ -319,6 +343,8 @@ extension WallpaperFeatureStrings {
         emptyAll: "找不到桌布",
         emptyOwn: "尚未新增圖片",
         emptyApple: "找不到 Apple 桌布",
+        downloading: "下載中…",
+        downloadFailed: "無法下載桌布",
         applyFailed: "無法設定桌布",
         previousPage: "上一頁",
         nextPage: "下一頁"
@@ -342,6 +368,8 @@ extension WallpaperFeatureStrings {
         emptyAll: "搵唔到桌布",
         emptyOwn: "未新增圖片",
         emptyApple: "搵唔到 Apple 桌布",
+        downloading: "下載中…",
+        downloadFailed: "無法下載桌布",
         applyFailed: "無法設定桌布",
         previousPage: "上一頁",
         nextPage: "下一頁"
