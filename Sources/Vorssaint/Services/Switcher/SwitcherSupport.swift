@@ -228,8 +228,8 @@ struct SwitcherAppGroup: Identifiable, Equatable {
 /// standing in for them — the number it used to be had drifted 16pt past what
 /// it stood for, and the card spent the difference on nothing.
 enum SwitcherGridCard {
-    static var width: CGFloat { 288 * PreviewSizing.scale }
-    static var height: CGFloat { 214 * PreviewSizing.scale }
+    static var width: CGFloat { 288 * PreviewSizing.switcherScale }
+    static var height: CGFloat { 214 * PreviewSizing.switcherScale }
     static let padding: CGFloat = 10
     static let titleSpacing: CGFloat = 7
     /// One 13pt line over one 10.5pt line, 2pt apart, descenders included.
@@ -242,7 +242,7 @@ enum SwitcherGridCard {
     /// Stands in for a thumbnail that has not arrived, so it has to stay
     /// inside the thumbnail at every preview size (#793 gave it the scale;
     /// naming it is what lets a test hold it to the thumbnail it sits in).
-    static var fallbackIconSize: CGFloat { 80 * PreviewSizing.scale }
+    static var fallbackIconSize: CGFloat { 80 * PreviewSizing.switcherScale }
 }
 
 struct SwitcherIconRowLayout: Equatable {
@@ -255,7 +255,7 @@ struct SwitcherIconRowLayout: Equatable {
     let panelSize: CGSize
     let showsShortcutHints: Bool
 
-    static var scale: CGFloat { min(PreviewSizing.scale, 1.15) }
+    static var scale: CGFloat { min(PreviewSizing.switcherScale, 1.15) }
     static var iconSize: CGFloat { 68 * scale }
     static var selectedIconSize: CGFloat { 78 * scale }
     static let iconTileSpacing: CGFloat = 5
@@ -1169,6 +1169,18 @@ enum SwitcherSupport {
                                            itemIDs: items.filter { $0.pid == item.pid }.map(\.id)))
         }
         return groups
+    }
+
+    static func windowlessAppDividerPIDs(items: [SwitcherItem]) -> Set<pid_t> {
+        let groups = appGroups(items: items)
+        let windowedPIDs = Set(items.filter { !$0.isAppEntry }.map(\.pid))
+        var dividers: Set<pid_t> = []
+        for (previous, current) in zip(groups, groups.dropFirst()) {
+            if windowedPIDs.contains(previous.pid) != windowedPIDs.contains(current.pid) {
+                dividers.insert(current.pid)
+            }
+        }
+        return dividers
     }
 
     /// Where a session starts. `pids` is the list in display order, one entry

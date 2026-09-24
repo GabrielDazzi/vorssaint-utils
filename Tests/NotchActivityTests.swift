@@ -34,9 +34,12 @@ enum NotchActivityTests {
         suite.expect(Defaults.registeredDefaults[DefaultsKey.notchTimerSoundEnabled] as? Bool == true
                && SettingsBackupSupport.exportKeys().contains(DefaultsKey.notchTimerSoundEnabled),
                "the sound preference is registered and included in settings backup")
-        suite.expect(Defaults.registeredDefaults[DefaultsKey.notchCoversMenus] as? Bool == false
+        suite.expect(Defaults.registeredDefaults[DefaultsKey.notchCoversMenus] as? Bool == true
                && SettingsBackupSupport.exportKeys().contains(DefaultsKey.notchCoversMenus),
-               "covering the menus stays off by default and travels with settings backups")
+               "compact activity stays visible by default and the preference travels with settings backups")
+        suite.expect(NotchSupport.coversMenus(in: defaults), "missing menu-cover preferences use the visible default")
+        defaults.set(false, forKey: DefaultsKey.notchCoversMenus)
+        suite.expect(!NotchSupport.coversMenus(in: defaults), "an explicit choice to leave menus uncovered is preserved")
         suite.expect(NotchTimerAlert.maximumDuration == .seconds(300), "an alarm is limited to five minutes")
         var sounds = 0, stops = 0
         var elapsed: Duration = .zero
@@ -503,13 +506,13 @@ enum NotchActivityTests {
                                                      menuBarHeight: barHeight, compactSideRoom: room)
                         for downloads in [false, true] {
                             let compact = original.compactTimerGeometry(showsDownloads: downloads)
-                            if room.isFinite && room >= 72 {
+                            if room.isFinite && room >= 64 {
                                 suite.expect(!compact.compactActivityUsesFooter
-                                       && compact.compactActivityWingWidth == min(room, downloads ? 80 : 72).rounded(.down),
+                                       && compact.compactActivityWingWidth == min(room, downloads ? 80 : 64).rounded(.down),
                                        "timer wings keep their readable width around larger cameras, including simultaneous downloads")
                                 suite.expect(compact.compactActivityCameraGap == original.cameraWidth
-                                       && compact.compactActivityContentHeight == original.menuBarHeight,
-                                       "narrower timer wings still clear the camera and preserve the menu bar height")
+                                       && compact.compactActivityContentHeight == original.stripHeight,
+                                       "narrower timer wings still clear the camera and keep the cutout's height")
                             } else if notched {
                                 suite.expect(!compact.compactActivityUsesFooter && compact.compactActivityWingWidth == 0,
                                        "unavailable menu space retracts timer wings without drawing over adjacent menus")
@@ -526,7 +529,7 @@ enum NotchActivityTests {
                             let positioned = compact.frame(for: compact.compactActivitySize)
                             suite.expect(screen.contains(positioned), "compact timer placement stays within the screen")
                             if notched {
-                                suite.expect(positioned.maxY == screen.maxY && positioned.height == original.menuBarHeight
+                                suite.expect(positioned.maxY == screen.maxY && positioned.height == original.cameraHeight
                                        && compact.compactActivityTopPadding == 0,
                                        "timer and simultaneous downloads stay beside the camera through menu-space changes")
                             }
@@ -600,8 +603,32 @@ enum NotchActivityTests {
                    "recognized headset families use their native symbol, with generic audio as fallback")
         }
         suite.expect(NotchAccessorySupport.symbol(for: .keyboard, name: "Keyboard") == "keyboard"
-               && NotchAccessorySupport.symbol(for: .device, name: "Device") == "battery.25percent",
+               && NotchAccessorySupport.symbol(for: .device, name: "Device") == "dot.radiowaves.left.and.right"
+               && NotchAccessorySupport.symbol(for: .device, name: "Alex’s Magic Trackpad") == "rectangle.and.hand.point.up.left",
                "model-specific audio symbols preserve other accessory types")
+        for kind: PeripheralBatteryKind in [.audio, .keyboard, .mouse, .trackpad, .device] {
+            let symbol = NotchAccessorySupport.symbol(for: kind, name: "Device")
+            suite.expect(NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil,
+                         "accessory indicators use symbols available on this macOS version")
+        }
+        // A renamed accessory still announces its Bluetooth class of device.
+        for (major, minor, symbol) in [(UInt32(0x05), UInt32(0x25), "rectangle.and.hand.point.up.left"),
+                                       (0x05, 0x20, "computermouse"), (0x05, 0x10, "keyboard"),
+                                       (0x05, 0x30, "keyboard"), (0x05, 0x02, "gamecontroller"),
+                                       (0x05, 0x03, "av.remote"), (0x04, 0x06, "headphones"),
+                                       (0x04, 0x01, "headphones"), (0x04, 0x05, "hifispeaker"),
+                                       (0x04, 0x08, "car"), (0x02, 0x03, "iphone"), (0x01, 0x03, "laptopcomputer"),
+                                       (0x01, 0x01, "desktopcomputer"), (0x07, 0x01, "applewatch"),
+                                       (0x06, 0x20, "printer"), (0x08, 0x04, "gamecontroller"),
+                                       (0x00, 0x00, "dot.radiowaves.left.and.right"),
+                                       (0x1F, 0x00, "dot.radiowaves.left.and.right")] {
+            let resolved = NotchAccessorySupport.symbol(name: "Kitchen", majorClass: major, minorClass: minor)
+            suite.expect(resolved == symbol && NSImage(systemSymbolName: resolved, accessibilityDescription: nil) != nil,
+                         "a renamed accessory takes its icon from its class of device (\(major), \(minor))")
+        }
+        suite.expect(NotchAccessorySupport.symbol(name: "Alex’s Magic Keyboard", majorClass: 0x05, minorClass: 0x25) == "keyboard"
+               && NotchAccessorySupport.symbol(name: "AirPods Pro", majorClass: 0x04, minorClass: 0x05) == "airpodspro",
+               "a name that says what the accessory is outranks its announced class")
         func device(_ percent: Int, id: String = "HID:1", name: String = "Keyboard") -> PeripheralBatteryDevice {
             PeripheralBatteryDevice(id: id, name: name, percent: percent, kind: .keyboard)
         }

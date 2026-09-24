@@ -59,7 +59,7 @@ enum NotchCompactTests {
         func selectPad(_ id: UUID) {}
         func copyAll() {}
         func togglePreview() { isPreviewing.toggle() }
-        func show() {}
+        func show(allowsIsland: Bool = true) {}
         func exportText(suggestedName: String, from window: NSWindow? = nil) {}
     }
     struct NotchEmptyView: View {
@@ -122,6 +122,7 @@ enum NotchCompactTests {
     final class RailState: ObservableObject {
         @Published var selected: Int?
         @Published var rows = 2
+        @Published var count = 1000
         var realized = Set<Int>()
     }
     struct Marker: NSViewRepresentable {
@@ -136,7 +137,7 @@ enum NotchCompactTests {
     struct Rail: View {
         @ObservedObject var state: RailState
         var body: some View {
-            let entries = (0..<1000).map { NotchCompactTests.Entry(id: $0) }
+            let entries = (0..<state.count).map { NotchCompactTests.Entry(id: $0) }
             return NotchRail(items: entries, rows: state.rows, itemWidth: 76, width: 424,
                              scrollTarget: state.selected, content: marker)
                 .frame(width: 424, height: 152)
@@ -230,6 +231,18 @@ enum NotchCompactTests {
         settle(host)
         suite.expect(state.realized.count > 0 && state.realized.count < 40,
                      "a thousand history entries create only the visible rail neighborhood")
+        let firstTiles = (0..<3).compactMap { id in
+            descendants(host).first { $0.identifier?.rawValue == "rail-\(id)" }.map { $0.convert($0.bounds, to: host) }
+        }
+        if firstTiles.count == 3 {
+            let gap = CGPoint(x: (firstTiles[0].maxX + firstTiles[2].minX) / 2, y: firstTiles[0].midY)
+            var target = host.hitTest(gap)
+            while let view = target, !(view is NSScrollView) { target = view.superview }
+            suite.expect(target is NSScrollView,
+                         "empty space between rail columns routes wheel events through the scroll view")
+        } else {
+            suite.expect(false, "the visible rail has enough columns to exercise its empty gap")
+        }
         for (target, rows) in [(12, 2), (900, 2), (901, 2), (901, 1), (0, 1)] {
             state.rows = rows
             state.selected = target
@@ -240,6 +253,25 @@ enum NotchCompactTests {
         }
         suite.expect(state.realized.count < 500,
                      "jumping to distant selections does not realize the intervening history")
+        // Five tiles over two rows fit three columns wide: they read across
+        // the rows, and the two on the last row sit centered under the three.
+        state.count = 5
+        state.rows = 2
+        state.selected = nil
+        settle(host)
+        let frames = (0..<5).compactMap { id in
+            descendants(host).first { $0.identifier?.rawValue == "rail-\(id)" }.map { $0.convert($0.bounds, to: host) }
+        }
+        suite.expect(frames.count == 5
+               && frames[0].minY == frames[1].minY && frames[1].minY == frames[2].minY
+               && frames[0].minX < frames[1].minX && frames[1].minX < frames[2].minX
+               && frames[3].minY == frames[4].minY && frames[3].minY != frames[0].minY,
+               "a rail that fits reads left to right along its rows")
+        suite.expect(frames.count == 5
+               && abs(frames[3].width - frames[0].width) < 0.5
+               && abs(frames[3].midX - (frames[0].midX + frames[1].midX) / 2) < 0.5
+               && abs((frames[3].minX + frames[4].maxX) / 2 - host.bounds.midX) < 0.5,
+               "a short last row keeps the cell width and sits centered under the row above")
     }
     private static func scratchpad(_ suite: TestSuite) {
         let pad = ScratchpadService.shared

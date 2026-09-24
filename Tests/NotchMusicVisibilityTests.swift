@@ -69,12 +69,15 @@ enum NotchMusicVisibilityTests {
         var dragPlaceholder = false
         var hasTimerActivity = false
         var hasDownloadActivity = false
+        var hasAgentActivity = false
+        var agentStripWing: CGFloat = 58
         var notchNeedsMonitor = false
         var heldDrag = false
         var pinned = false
         var openedByHover = false
         var sectionQuery = ""
         var highlightedSection: NotchModule?
+        var sectionRow = 0
         var hoverState = NotchHoverState()
         var hoverWork: DispatchWorkItem?
         var windowHost: Host?
